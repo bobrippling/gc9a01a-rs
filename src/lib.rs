@@ -1,6 +1,7 @@
 //! Library for the GC9A01A display driver
 #![no_std]
 
+mod graphics;
 mod registers;
 
 use embedded_hal::blocking::delay;
