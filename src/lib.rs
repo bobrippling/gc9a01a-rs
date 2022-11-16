@@ -4,66 +4,45 @@
 mod registers;
 
 use embedded_hal::blocking::delay;
-use embedded_hal::blocking::spi;
 use embedded_hal::digital::v2::OutputPin;
 use embedded_hal::PwmPin;
+
+use display_interface::{DataFormat, DisplayError, WriteOnlyDataCommand};
 
 use registers::*;
 
 #[derive(Debug)]
-pub enum Error<S, P> {
-    /// Error in SPI communication
-    Spi(S),
-    /// Error in GPIO manipulation
-    Gpio(P),
-    /// Error while using delay
-    Delay,
-}
-
-#[derive(Debug)]
-pub struct GC9A01A<Spi, PinCS, PinDC, PinRst, Pwm> {
-    /// Spi communication channel.
-    spi: Spi,
-    /// Chip select pin.
-    cs: PinCS,
-    /// Data/Command selection output pin.
-    dc: PinDC,
+pub struct GC9A01A<DI, RST, PWM> {
+    /// Display interface.
+    itf: DI,
     /// Reset pin.
-    rst: PinRst,
+    rst: RST,
     /// Backlight pin, pulse-width modulated.
-    bl: Pwm,
+    bl: PWM,
 }
 
-impl<Spi, PinCS, PinDC, PinRst, Pwm, SE, PE> GC9A01A<Spi, PinCS, PinDC, PinRst, Pwm>
+impl<DI, RST, PWM> GC9A01A<DI, RST, PWM>
 where
-    Spi: spi::Write<u8, Error = SE>,
-    PinCS: OutputPin<Error = PE>,
-    PinDC: OutputPin<Error = PE>,
-    PinRst: OutputPin<Error = PE>,
-    Pwm: PwmPin,
+    DI: WriteOnlyDataCommand,
+    RST: OutputPin,
+    PWM: PwmPin,
 {
     pub const WIDTH: u8 = 240;
     pub const HEIGHT: u8 = 240;
 
-    pub fn new(spi: Spi, cs: PinCS, dc: PinDC, rst: PinRst, bl: Pwm) -> Self {
-        Self {
-            spi,
-            cs,
-            dc,
-            rst,
-            bl,
-        }
+    pub fn new(itf: DI, rst: RST, bl: PWM) -> Self {
+        Self { itf, rst, bl }
     }
 
-    pub fn initialize<D>(&mut self, delay: &mut D) -> Result<(), Error<SE, PE>>
+    pub fn initialize<D>(&mut self, delay: &mut D) -> Result<(), DisplayError>
     where
         D: delay::DelayMs<u32>,
     {
         for o in INIT_SEQ {
             match o {
                 InitOp::Cmd(c) => {
-                    self.send_command(c.cmd)?;
-                    self.send_data(c.data)?;
+                    self.itf.send_commands(DataFormat::U8(&[c.cmd]))?;
+                    self.itf.send_data(DataFormat::U8(c.data))?;
                 }
                 InitOp::Delay(d) => {
                     delay.delay_ms(d);
@@ -74,79 +53,56 @@ where
         Ok(())
     }
 
-    pub fn reset<D>(&mut self, delay: &mut D) -> Result<(), Error<SE, PE>>
+    pub fn reset<D>(&mut self, delay: &mut D) -> Result<(), DisplayError>
     where
         D: delay::DelayMs<u32>,
     {
-        self.rst.set_high().map_err(Error::Gpio)?;
+        self.rst.set_high().map_err(|_| DisplayError::RSError)?;
         delay.delay_ms(100);
-        self.rst.set_low().map_err(Error::Gpio)?;
+        self.rst.set_low().map_err(|_| DisplayError::RSError)?;
         delay.delay_ms(100);
-        self.rst.set_high().map_err(Error::Gpio)?;
+        self.rst.set_high().map_err(|_| DisplayError::RSError)?;
         delay.delay_ms(100);
         Ok(())
     }
 
-    pub fn set_backlight(&mut self, duty: Pwm::Duty) {
+    pub fn set_backlight(&mut self, duty: PWM::Duty) {
         self.bl.set_duty(duty);
     }
 
-    pub fn clear(&mut self, color: u16) -> Result<(), Error<SE, PE>> {
-        self.set_windows()?;
-        self.dc.set_high().map_err(Error::Gpio)?;
-        self.cs.set_low().map_err(Error::Gpio)?;
-        for _ in 0..Self::WIDTH {
-            for _ in 0..Self::HEIGHT {
-                self.spi
-                    .write(&u16::to_be_bytes(color))
-                    .map_err(Error::Spi)?;
-            }
-        }
-        self.cs.set_high().map_err(Error::Gpio)?;
-        Ok(())
-    }
-
-    fn set_windows(&mut self) -> Result<(), Error<SE, PE>> {
-        self.send_command(GC9A01A_CASET)?;
-        self.send_data(&[0x00, 0x00, 0x00, Self::WIDTH - 1])?;
-        self.send_command(GC9A01A_PASET)?;
-        self.send_data(&[0x00, 0x00, 0x00, Self::HEIGHT - 1])?;
-        self.send_command(GC9A01A_RAMWR)
-    }
-
-    fn send_command(&mut self, command: u8) -> Result<(), Error<SE, PE>> {
-        self.dc.set_low().map_err(Error::Gpio)?;
-        self.with_cs_low(|g| g.spi.write(&[command]).map_err(Error::Spi))
-    }
-
-    fn send_data(&mut self, data: &[u8]) -> Result<(), Error<SE, PE>> {
-        self.dc.set_high().map_err(Error::Gpio)?;
-        self.with_cs_low(|g| g.spi.write(data).map_err(Error::Spi))
-    }
-
-    fn with_cs_low<F, T>(&mut self, f: F) -> Result<T, Error<SE, PE>>
+    fn draw_color<C>(
+        &mut self,
+        x_begin: u8,
+        x_end: u8,
+        y_begin: u8,
+        y_end: u8,
+        data: &mut C,
+    ) -> Result<(), DisplayError>
     where
-        F: FnOnce(&mut Self) -> Result<T, Error<SE, PE>>,
+        C: Iterator<Item = u16>,
     {
-        self.cs.set_low().map_err(Error::Gpio)?;
-        let result = f(self);
-        self.cs.set_high().map_err(Error::Gpio)?;
-
-        result
+        self.set_windows(x_begin, x_end, y_begin, y_end)?;
+        self.itf.send_data(DataFormat::U16BEIter(data))
     }
-}
 
-pub fn add(left: usize, right: usize) -> usize {
-    left + right
-}
+    fn draw_bytes(
+        &mut self,
+        x_begin: u8,
+        x_end: u8,
+        y_begin: u8,
+        y_end: u8,
+        data: &[u8],
+    ) -> Result<(), DisplayError> {
+        self.set_windows(x_begin, x_end, y_begin, y_end)?;
+        self.itf.send_data(DataFormat::U8(data))
+    }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn it_works() {
-        let result = add(2, 2);
-        assert_eq!(result, 4);
+    // TODO: extend this to u16
+    fn set_windows(&mut self, xs: u8, xe: u8, ys: u8, ye: u8) -> Result<(), DisplayError> {
+        self.itf.send_commands(DataFormat::U8(&[GC9A01A_CASET]))?;
+        self.itf.send_data(DataFormat::U8(&[0x00, xs, 0x00, xe]))?;
+        self.itf.send_commands(DataFormat::U8(&[GC9A01A_PASET]))?;
+        self.itf.send_data(DataFormat::U8(&[0x00, ys, 0x00, ye]))?;
+        self.itf.send_commands(DataFormat::U8(&[GC9A01A_RAMWR]))
     }
 }
