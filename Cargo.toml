@@ -6,7 +6,7 @@ edition = "2021"
 description = "SPI driver for the GC9A01A LCD display controller"
 license = "MIT OR Apache-2.0"
 repository = "https://gitlab.com/jspngh/gc9a01a-rs"
-keywords = ["no-std", "embedded", "embedded-hal-driver", "gc9a01a", "waveshare", "lcd", "display"]
+keywords = ["no-std", "embedded", "embedded-graphics", "gc9a01a", "display"]
 categories = ["embedded", "hardware-support", "no-std"]
 
 [dependencies]
