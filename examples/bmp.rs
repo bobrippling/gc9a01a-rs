@@ -57,13 +57,12 @@ fn main() -> ! {
     );
 
     // These are implicitly used by the spi driver if they are in the correct mode
-    let _spi_sclk = pins.gpio2.into_mode::<gpio::FunctionSpi>();
-    let _spi_mosi = pins.gpio3.into_mode::<gpio::FunctionSpi>();
-    let _spi_miso = pins.gpio4.into_mode::<gpio::FunctionSpi>();
-    let spi_cs = pins.gpio5.into_push_pull_output();
+    let _spi_sclk = pins.gpio10.into_mode::<gpio::FunctionSpi>();
+    let _spi_mosi = pins.gpio11.into_mode::<gpio::FunctionSpi>();
+    let spi_cs = pins.gpio9.into_push_pull_output();
 
-    // Create an SPI driver instance for the SPI0 device
-    let spi = spi::Spi::<_, _, 8>::new(pac.SPI0);
+    // Create an SPI driver instance for the SPI1 device
+    let spi = spi::Spi::<_, _, 8>::new(pac.SPI1);
 
     // Exchange the uninitialised SPI driver for an initialised one
     let spi = spi.init(
@@ -73,22 +72,22 @@ fn main() -> ! {
         &embedded_hal::spi::MODE_0,
     );
 
-    let dc_pin = pins.gpio6.into_push_pull_output();
-    let rst_pin = pins.gpio7.into_push_pull_output();
+    let dc_pin = pins.gpio8.into_push_pull_output();
+    let rst_pin = pins.gpio12.into_push_pull_output();
 
     let spi_interface = SPIInterface::new(spi, dc_pin, spi_cs);
 
     // initialize PWM for backlight
     let pwm_slices = pwm::Slices::new(pac.PWM, &mut pac.RESETS);
 
-    // Configure PWM4
-    let mut pwm = pwm_slices.pwm4;
+    // Configure PWM6
+    let mut pwm = pwm_slices.pwm6;
     pwm.set_ph_correct();
     pwm.enable();
 
-    // Output channel A on PWM4 to GPIO 8
-    let mut channel = pwm.channel_a;
-    channel.output_to(pins.gpio8);
+    // Output channel B on PWM6 to GPIO 13
+    let mut channel = pwm.channel_b;
+    channel.output_to(pins.gpio13);
 
     // Create display driver
     let mut display = gc9a01a::GC9A01A::new(spi_interface, rst_pin, channel);
