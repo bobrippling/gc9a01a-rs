@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 ///< Software reset register
 pub const GC9A01A_SWRESET: u8 = 0x01;
 

@@ -61,8 +61,7 @@ where
                     .points()
                     .zip(colors)
                     .filter(|(pos, _color)| drawable_area.contains(*pos))
-                    .map(|(_, color)| color.into_storage())
-                    .into_iter(),
+                    .map(|(_, color)| color.into_storage()),
             )
         } else {
             Ok(())
