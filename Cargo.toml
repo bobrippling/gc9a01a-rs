@@ -1,6 +1,6 @@
 [package]
 name = "gc9a01a"
-version = "0.1.0"
+version = "0.1.1"
 authors = ["Jonas Spanoghe <jonas@spanoghe.net>"]
 edition = "2021"
 description = "SPI driver for the GC9A01A LCD display controller"
