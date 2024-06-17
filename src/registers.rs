@@ -115,7 +115,8 @@ pub enum InitOp {
     Delay(u32),
 }
 
-pub const INIT_SEQ: [InitOp; 52] = [
+pub const INIT_SEQ: [InitOp; 53] = [
+    InitOp::Delay(1), // must have an initial delay
     InitOp::Cmd(InitCmd {
         cmd: GC9A01A_INREGEN2,
         data: &[],
@@ -292,6 +293,7 @@ pub const INIT_SEQ: [InitOp; 52] = [
         cmd: 0x66,
         data: &[0x3C, 0x00, 0xCD, 0x67, 0x45, 0x45, 0x10, 0x00, 0x00, 0x00],
     }),
+    // the initial delay cannot be after the below command
     InitOp::Cmd(InitCmd {
         cmd: 0x67,
         data: &[0x00, 0x3C, 0x00, 0x00, 0x00, 0x01, 0x54, 0x10, 0x32, 0x98],
